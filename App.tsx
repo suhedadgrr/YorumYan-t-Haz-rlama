@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppConfig, AppState, GeneratedResponse } from './types';
 import SetupForm from './components/SetupForm';
 import ResponseCard from './components/ResponseCard';
-import { generateCommentResponse } from './services/geminiService';
+import { generateCommentResponse, refineCommentResponse } from './services/geminiService';
 import { 
   MessageSquare, 
   Settings, 
@@ -13,7 +13,8 @@ import {
   ClipboardCopy,
   Check,
   Star,
-  PlusCircle
+  PlusCircle,
+  X
 } from 'lucide-react';
 
 const App: React.FC = () => {
@@ -27,9 +28,35 @@ const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [fullCopySuccess, setFullCopySuccess] = useState(false);
 
+  // Edit Modal State
+  const [isEditing, setIsEditing] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [textToEdit, setTextToEdit] = useState('');
+
+  // Load config from local storage on mount
+  useEffect(() => {
+    const savedConfig = localStorage.getItem('comment_assistant_config');
+    if (savedConfig) {
+      try {
+        const parsedConfig = JSON.parse(savedConfig);
+        setConfig(parsedConfig);
+        setAppState(AppState.MAIN);
+      } catch (e) {
+        console.error("Failed to parse saved config", e);
+        localStorage.removeItem('comment_assistant_config');
+      }
+    }
+  }, []);
+
   const handleSetupComplete = (newConfig: AppConfig) => {
+    localStorage.setItem('comment_assistant_config', JSON.stringify(newConfig));
     setConfig(newConfig);
     setAppState(AppState.MAIN);
+  };
+
+  const handleClearConfig = () => {
+    localStorage.removeItem('comment_assistant_config');
+    setConfig(null);
   };
 
   const handleGenerate = async () => {
@@ -75,6 +102,36 @@ ${response.turkishReply}`;
     setTimeout(() => setFullCopySuccess(false), 2000);
   };
 
+  // Open edit modal for Turkish reply
+  const handleEditClick = () => {
+    if (response) {
+      setTextToEdit(response.turkishReply);
+      setIsEditing(true);
+    }
+  };
+
+  // Submit edited text to be refined and re-translated
+  const handleSaveRefinement = async () => {
+    if (!response || !config || !textToEdit.trim()) return;
+    
+    setEditLoading(true);
+    try {
+      const refined = await refineCommentResponse(textToEdit, response.detectedLanguage, config);
+      
+      setResponse({
+        ...response,
+        turkishReply: refined.turkishReply,
+        originalReply: refined.originalReply
+      });
+      setIsEditing(false);
+    } catch (err) {
+      console.error(err);
+      alert("Düzenleme sırasında bir hata oluştu.");
+    } finally {
+      setEditLoading(false);
+    }
+  };
+
   // Header Component
   const Header = () => (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
@@ -103,10 +160,14 @@ ${response.turkishReply}`;
     <div className="min-h-screen bg-slate-50 flex flex-col">
       <Header />
 
-      <main className="flex-grow p-4 sm:p-6 lg:p-8">
+      <main className="flex-grow p-4 sm:p-6 lg:p-8 relative">
         {appState === AppState.SETUP ? (
           <div className="mt-8">
-            <SetupForm onComplete={handleSetupComplete} initialConfig={config || undefined} />
+            <SetupForm 
+              onComplete={handleSetupComplete} 
+              initialConfig={config || undefined} 
+              onClear={handleClearConfig}
+            />
           </div>
         ) : (
           <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8">
@@ -264,9 +325,61 @@ ${response.turkishReply}`;
                     content={response.turkishReply}
                     bgColor="bg-orange-50/50"
                     borderColor="border-orange-100"
+                    onEdit={handleEditClick}
                   />
                 </div>
               )}
+            </div>
+          </div>
+        )}
+
+        {/* Edit Modal */}
+        {isEditing && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+              <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50">
+                <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+                  <MessageSquare className="w-5 h-5 text-indigo-600" />
+                  Yanıtı Düzenle & İyileştir
+                </h3>
+                <button 
+                  onClick={() => setIsEditing(false)}
+                  className="text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6">
+                <p className="text-sm text-slate-600 mb-4">
+                  Türkçe yanıtı istediğiniz gibi düzenleyin. Kaydettiğinizde yapay zeka metni parlatacak ve 
+                  <span className="font-semibold text-indigo-600"> {response?.detectedLanguage} </span> 
+                  diline otomatik çevirecektir.
+                </p>
+                <textarea
+                  value={textToEdit}
+                  onChange={(e) => setTextToEdit(e.target.value)}
+                  className="w-full h-40 p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 resize-none transition-all bg-white text-slate-900 mb-4"
+                  placeholder="Yanıtınızı buraya yazın..."
+                />
+                
+                <div className="flex gap-3">
+                  <button
+                    onClick={() => setIsEditing(false)}
+                    className="flex-1 px-4 py-2 border border-slate-300 text-slate-700 rounded-lg hover:bg-slate-50 font-medium transition-colors"
+                  >
+                    İptal
+                  </button>
+                  <button
+                    onClick={handleSaveRefinement}
+                    disabled={editLoading || !textToEdit.trim()}
+                    className="flex-1 flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {editLoading ? <RefreshCw className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                    Yenile ve Çevir
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         )}

@@ -1,17 +1,26 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AppConfig } from '../types';
-import { Rocket, Save } from 'lucide-react';
+import { Rocket, Save, Trash2 } from 'lucide-react';
 
 interface SetupFormProps {
   onComplete: (config: AppConfig) => void;
   initialConfig?: AppConfig;
+  onClear?: () => void;
 }
 
-const SetupForm: React.FC<SetupFormProps> = ({ onComplete, initialConfig }) => {
+const SetupForm: React.FC<SetupFormProps> = ({ onComplete, initialConfig, onClear }) => {
   const [appName, setAppName] = useState(initialConfig?.appName || '');
   const [features, setFeatures] = useState(initialConfig?.features || '');
   const [email, setEmail] = useState(initialConfig?.email || '');
   const [campaign, setCampaign] = useState(initialConfig?.campaign || '');
+
+  // Update local state if initialConfig changes (e.g. after clear)
+  useEffect(() => {
+    setAppName(initialConfig?.appName || '');
+    setFeatures(initialConfig?.features || '');
+    setEmail(initialConfig?.email || '');
+    setCampaign(initialConfig?.campaign || '');
+  }, [initialConfig]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,15 +29,39 @@ const SetupForm: React.FC<SetupFormProps> = ({ onComplete, initialConfig }) => {
     }
   };
 
+  const handleClear = () => {
+    if (window.confirm("Kayıtlı uygulama bilgileri silinecek. Emin misiniz?")) {
+      setAppName('');
+      setFeatures('');
+      setEmail('');
+      setCampaign('');
+      if (onClear) onClear();
+    }
+  };
+
   return (
     <div className="max-w-2xl mx-auto bg-white p-8 rounded-2xl shadow-xl border border-slate-100">
-      <div className="flex items-center gap-3 mb-6 text-indigo-600">
-        <Rocket className="w-8 h-8" />
-        <h2 className="text-2xl font-bold text-slate-800">Asistan Kurulumu</h2>
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3 text-indigo-600">
+          <Rocket className="w-8 h-8" />
+          <h2 className="text-2xl font-bold text-slate-800">Asistan Kurulumu</h2>
+        </div>
+        {initialConfig && onClear && (
+          <button
+            type="button"
+            onClick={handleClear}
+            className="flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 bg-red-50 hover:bg-red-100 px-3 py-2 rounded-lg transition-colors"
+            title="Kayıtlı verileri sil"
+          >
+            <Trash2 className="w-4 h-4" />
+            Verileri Temizle
+          </button>
+        )}
       </div>
       
       <p className="mb-8 text-slate-600">
         Asistanı kullanmaya başlamadan önce, yanıtların uygulamanıza özel olması için aşağıdaki bilgileri doldurun.
+        Verileriniz tarayıcınızda saklanacaktır.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-6">
